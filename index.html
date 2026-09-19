@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<meta name="description" content="Registro sencillo de horas de trabajo">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>Horas de trabajo</title>
+<style>
+:root{color-scheme:light;--bg:#f5f7fb;--card:#fff;--text:#172033;--muted:#687386;--border:#dfe4ec;--accent:#2563eb;--accent2:#eff6ff;--danger:#dc2626}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:760px;margin:auto;padding:18px 14px 32px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+h1{font-size:1.35rem;margin:0}.sub{font-size:.86rem;color:var(--muted);margin-top:3px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:18px;margin-bottom:14px}
+label{display:block;font-size:.85rem;color:var(--muted);margin-bottom:6px}
+input,select,button{font:inherit}input,select{width:100%;min-height:48px;border:1px solid var(--border);border-radius:12px;padding:10px 12px;background:var(--card);color:var(--text)}
+.timer{text-align:center;font-variant-numeric:tabular-nums;font-size:clamp(3rem,14vw,5.4rem);font-weight:750;letter-spacing:-.04em;margin:18px 0 4px}
+.status{text-align:center;color:var(--muted);font-size:.9rem;margin-bottom:16px}
+.actions{display:flex;gap:9px;flex-wrap:wrap}.actions button{flex:1;min-width:110px;min-height:48px;border:0;border-radius:12px;padding:10px 14px;font-weight:650}
+.primary{background:var(--accent);color:white}.secondary{background:var(--accent2);color:#174ea6;border:1px solid #bfdbfe!important}.plain{background:var(--card);border:1px solid var(--border)!important}.danger{color:var(--danger);background:#fff1f2;border:1px solid #fecdd3!important}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{background:var(--accent2);border-radius:14px;padding:13px}.stat b{display:block;font-size:1.35rem;font-variant-numeric:tabular-nums}.stat span{font-size:.78rem;color:var(--muted)}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:13px 0;border-bottom:1px solid var(--border)}.row:last-child{border-bottom:0}.row-title{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row-meta{font-size:.78rem;color:var(--muted);margin-top:3px}.row-time{font-variant-numeric:tabular-nums;font-weight:700}.row-actions{display:flex;gap:6px;margin-top:7px}.row-actions button{min-height:36px;border-radius:9px;padding:5px 9px;border:1px solid var(--border);background:var(--card)}
+.empty{padding:22px 4px;text-align:center;color:var(--muted);font-size:.9rem}.toolbar{display:flex;gap:8px;align-items:end}.toolbar>*{flex:1}
+.install{display:none}.install.show{display:block}
+@media(max-width:430px){main{padding:14px 10px 26px}.card{padding:15px}.actions button{min-width:0}.toolbar{flex-direction:column;align-items:stretch}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div><h1>Horas de trabajo</h1><div class="sub">Cronómetro y registro diario</div></div>
+  <button id="installBtn" class="plain install" type="button">＋ Instalar</button>
+</header>
+
+<section class="card">
+  <label for="task">Actividad</label>
+  <input id="task" maxlength="80" placeholder="p. ej. Preparar clases">
+  <div id="timer" class="timer" aria-live="polite">00:00:00</div>
+  <div id="status" class="status">Preparado</div>
+  <div class="actions">
+    <button id="start" class="primary" type="button">▶ Iniciar</button>
+    <button id="pause" class="secondary" type="button" disabled>Ⅱ Pausar</button>
+    <button id="save" class="plain" type="button" disabled>✓ Guardar</button>
+  </div>
+</section>
+
+<section class="card">
+  <div class="stats">
+    <div class="stat"><span>Total de hoy</span><b id="todayTotal">0:00:00</b></div>
+    <div class="stat"><span>Sesiones</span><b id="sessionCount">0</b></div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="toolbar">
+    <div><label for="date">Ver fecha</label><input id="date" type="date"></div>
+    <button id="today" class="plain" type="button">Hoy</button>
+  </div>
+</section>
+
+<section class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <strong>Sesiones</strong>
+    <button id="clearDay" class="danger" type="button">Borrar día</button>
+  </div>
+  <div id="sessions"><div class="empty">No hay sesiones para esta fecha.</div></div>
+</section>
+
+<section class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <strong>Resumen</strong>
+    <button id="clearAll" class="danger" type="button">Borrar todo</button>
+  </div>
+  <div id="summary"><div class="empty">Aún no hay datos.</div></div>
+</section>
+</main>
+
+<script>
+(() => {
+  const KEY='workHours_v1';
+  const $=id=>document.getElementById(id);
+  const state={running:false,startMs:0,elapsedMs:0,task:'',timer:null,records:load()};
+  const pad=n=>String(n).padStart(2,'0');
+  const fmt=ms=>{let s=Math.max(0,Math.floor(ms/1000)),h=Math.floor(s/3600);s%=3600;let m=Math.floor(s/60),sec=s%60;return `${pad(h)}:${pad(m)}:${pad(sec)}`};
+  const shortFmt=ms=>{let s=Math.round(ms/60000),h=Math.floor(s/60),m=s%60;return h?`${h} h ${m} min`: `${m} min`};
+  const dateKey=d=>{const x=new Date(d);return `${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}`};
+  const today=dateKey(new Date());
+  $('date').value=today;
+
+  function load(){try{return JSON.parse(localStorage.getItem(KEY)||'[]').filter(x=>x&&x.date&&x.ms>0)}catch{return[]}}
+  function persist(){localStorage.setItem(KEY,JSON.stringify(state.records))}
+  function currentMs(){return state.elapsedMs+(state.running?Date.now()-state.startMs:0)}
+  function renderTimer(){$('timer').textContent=fmt(currentMs());if(state.running)state.timer=requestAnimationFrame(renderTimer)}
+  function start(){
+    const name=$('task').value.trim()||'Trabajo';
+    state.task=name;
+    if(!state.running){state.startMs=Date.now();state.running=true;$('task').disabled=true;$('start').disabled=true;$('pause').disabled=false;$('save').disabled=false;$('status').textContent='Trabajando…';renderTimer()}
+  }
+  function pause(){
+    if(!state.running)return;
+    state.elapsedMs+=Date.now()-state.startMs;state.running=false;
+    cancelAnimationFrame(state.timer);state.timer=null;
+    $('start').disabled=false;$('pause').disabled=true;$('status').textContent='Pausado';renderTimer();
+  }
+  function save(){
+    if(state.running)pause();
+    if(state.elapsedMs<1000)return;
+    const date=today=== $('date').value ? today : dateKey(new Date());
+    state.records.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),date,name:state.task||'Trabajo',ms:Math.round(state.elapsedMs),createdAt:new Date().toISOString()});
+    persist();reset();render();
+  }
+  function reset(){
+    state.running=false;state.startMs=0;state.elapsedMs=0;state.task='';
+    cancelAnimationFrame(state.timer);state.timer=null;
+    $('task').disabled=false;$('task').value='';$('start').disabled=false;$('pause').disabled=true;$('save').disabled=true;$('status').textContent='Preparado';renderTimer();
+  }
+  function dayRecords(){return state.records.filter(x=>x.date===$('date').value).sort((a,b)=>a.createdAt.localeCompare(b.createdAt))}
+  function render(){
+    const rs=dayRecords(), total=rs.reduce((a,x)=>a+x.ms,0);
+    $('todayTotal').textContent=fmt(total);$('sessionCount').textContent=rs.length;
+    const box=$('sessions');box.innerHTML='';
+    if(!rs.length)box.innerHTML='<div class="empty">No hay sesiones para esta fecha.</div>';
+    rs.forEach(r=>{
+      const row=document.createElement('div');row.className='row';
+      const left=document.createElement('div');
+      left.innerHTML=`<div class="row-title"></div><div class="row-meta">${new Date(r.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>`;
+      left.querySelector('.row-title').textContent=r.name;
+      const right=document.createElement('div');right.className='row-time';right.textContent=fmt(r.ms);
+      const actions=document.createElement('div');actions.className='row-actions';
+      const edit=document.createElement('button');edit.type='button';edit.textContent='Editar';edit.onclick=()=>editRecord(r.id);
+      const del=document.createElement('button');del.type='button';del.textContent='Eliminar';del.onclick=()=>deleteRecord(r.id);
+      actions.append(edit,del);left.append(actions);row.append(left,right);box.append(row);
+    });
+    renderSummary();
+  }
+  function renderSummary(){
+    const by={};state.records.forEach(r=>{by[r.date]=(by[r.date]||0)+r.ms});
+    const entries=Object.entries(by).sort((a,b)=>b[0].localeCompare(a[0]));
+    const box=$('summary');box.innerHTML='';
+    if(!entries.length){box.innerHTML='<div class="empty">Aún no hay datos.</div>';return}
+    entries.slice(0,31).forEach(([d,ms])=>{const row=document.createElement('div');row.className='row';row.innerHTML=`<div><div class="row-title">${new Date(d+'T12:00:00').toLocaleDateString([], {weekday:'short',day:'numeric',month:'short',year:'numeric'})}</div></div><div class="row-time">${fmt(ms)}</div>`;box.append(row)})
+  }
+  function editRecord(id){const r=state.records.find(x=>x.id===id);if(!r)return;const name=prompt('Nombre de la actividad:',r.name);if(name===null)return;const mins=prompt('Duración en minutos:',String(Math.round(r.ms/60000)));const n=Number(mins);if(!name.trim()||!Number.isFinite(n)||n<=0)return alert('Datos no válidos.');r.name=name.trim();r.ms=Math.round(n*60000);persist();render()}
+  function deleteRecord(id){if(!confirm('¿Eliminar esta sesión?'))return;state.records=state.records.filter(x=>x.id!==id);persist();render()}
+  $('start').onclick=start;$('pause').onclick=pause;$('save').onclick=save;
+  $('date').onchange=render;$('today').onclick=()=>{$('date').value=today;render()};
+  $('clearDay').onclick=()=>{const d=$('date').value;if(!confirm(`¿Borrar todas las sesiones de ${d}?`))return;state.records=state.records.filter(x=>x.date!==d);persist();render()};
+  $('clearAll').onclick=()=>{if(!confirm('¿Borrar todos los registros? Esta acción no se puede deshacer.'))return;state.records=[];persist();render()};
+  let deferred;
+  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferred=e;$('installBtn').classList.add('show')});
+  $('installBtn').onclick=async()=>{if(!deferred)return;deferred.prompt();deferred=null;$('installBtn').classList.remove('show')};
+  render();renderTimer();
+})();
+</script>
+</body>
+</html>
